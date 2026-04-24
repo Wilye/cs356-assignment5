@@ -297,10 +297,20 @@ control MyIngress(inout headers hdr,
         /* This action changes an incoming echo request to an echo reply */
 
         /* 1. Set ICMP type to ICMP_TYPE_ECHO_REPLY and code to 0 */
+        hdr.icmp.type = ICMP_TYPE_ECHO_REPLY;
+        hdr.icmp.code = 0;
         /* 2. Set the TTL field of IPV4 header to 64 */
+        hdr.ipv4.ttl = 64;
         /* 3. Swap src and dst IP addresses */
+        ipAddr_t temp_src = hdr.ipv4.srcAddr;
+        hdr.ipv4.srcAddr = hdr.ipv4.dstAddr;
+        hdr.ipv4.dstAddr = temp_src;
         /* 4. Swap src and dst MAC addresses */
+        macAddr_t temp_mac = hdr.ethernet.srcAddr;
+        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = temp_mac;
         /* 5. Set egress_spec to the ingress port */
+        standard_metadata.egress_spec = standard_metadata.ingress_port;
     }
 
     action forward_to_next_hop(ipAddr_t next_hop){
@@ -426,17 +436,26 @@ control MyIngress(inout headers hdr,
         if (hdr.ipv4.ttl == 1) {
             /* PART1_TODO: send ICMP time exceeded message */
             /* 1. Send the ICMP time exceeded msg using action send_ICMP_error */
+            send_ICMP_error(ICMP_TYPE_TIME_EXCEEDED, 0);
             /* 2. Set the source IP address to the IP of the ingress port
                   using table icmp_ingerss_port_ip */
+            icmp_ingress_port_ip.apply();
         }
         /* Check whether the packet's destination is router */
         else if (is_router_ip.apply().hit) {
             /* PART1_TODO: handle the packet of which destination is the router */
             /* 1. If the packet is an ICMP echo packet, send an ICMP echo reply */
-            /* using action send_ICMP_echo_reply (you should complete the action) */
+            if (hdr.icmp.isValid() && hdr.icmp.type == ICMP_TYPE_ECHO) {
+                /* using action send_ICMP_echo_reply (you should complete the action) */
+                send_ICMP_echo_reply();
             /* 2. Else if the packet is TCP or UDP packet, */
-            /* send an ICMP port unreachable msg using action send_ICMP_error */  
-            /* 3. Otherwise, drop the packet */
+            } else if (hdr.tcp.isValid() || hdr.udp.isValid()) {             
+                /* send an ICMP port unreachable msg using action send_ICMP_error */  
+                send_ICMP_error(ICMP_TYPE_DEST_UNREACHABLE, ICMP_CODE_PORT_UNREACHABLE);
+            } else {
+                /* 3. Otherwise, drop the packet */
+                drop();
+            }
         }
         /* Check if the packet is an ARP packet*/
         else if (hdr.arp.isValid()) {
